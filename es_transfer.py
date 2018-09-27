@@ -1,4 +1,5 @@
-#!/usr/local/bin/python
+#!/usr/bin/env python
+
 import os
 import sys
 import csv
@@ -12,6 +13,8 @@ from logging.handlers import RotatingFileHandler
 from argparse import ArgumentParser
 
 from amq import post_ads
+
+import es_dump
 
 date_vals = set([ \
     "CompletionDate",
@@ -98,24 +101,6 @@ def get_index_data(pattern='cms-20', hostname="es-cms.cern.ch", port=9203, outpu
 
     print "Wrote index information to '%s'" % outputfile 
 
-def dump_index(index, hostname="es-cms.cern.ch", port=9203,
-               target='/data/raw_index_data/'):
-
-    if not os.path.isdir(target):
-        os.makedirs(target)
-    
-    destination = os.path.join(target, "%s.json"%index)
-    username, password = read_es_config("es.conf")
-    starttime = time.time()
-    print ">>> Running elasticdump"
-    cmd = "elasticdump --input=https://%s:%s@%s:%d/%s" % (username, password, hostname, port, index)
-    cmd += " --output=%s/%s.json --type data --limit 2500" % (target, index)
-    result = subprocess.Popen(shlex.split(cmd),
-                              stdout=sys.stdout,
-                              stderr=sys.stderr).communicate()[0]
-
-    print "Index %s dumped to %s in %.2f mins" % (index, target, (time.time()-starttime)/60.)
-
 def remove_local_dump(index, target='/data/raw_index_data/'):
     location = os.path.join(target, '%s.json'%index)
     try:
@@ -127,7 +112,7 @@ def remove_local_dump(index, target='/data/raw_index_data/'):
 def dump_or_load(index, source):
     location = os.path.join(source, '%s.json'%index)
     if not os.path.isfile(location):
-        dump_index(index, target=source)
+        es_dump.dump_index(index, target=source)
 
     return location
 
