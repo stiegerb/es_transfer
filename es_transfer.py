@@ -186,10 +186,11 @@ class ESTransfer(object):
         """
         starttime = time.time()
 
+        indices_to_process = self.selected_indices or sorted(self.index_info.keys())
+        indices_to_process = set(indices_to_process).difference(set(self.checkpoint))
+
         # Process first index that is not in checkpoint
-        for index in sorted(self.index_info.keys()):
-            if index in self.checkpoint:
-                continue
+        for index in sorted(indices_to_process):
 
             mystart = time.time()
             print (">>> Processing index %s (size: %s, ndocs: %d)" %
@@ -229,8 +230,6 @@ class ESTransfer(object):
     def run(self):
         starttime = time.time()
 
-
-
         # Process first index that is not in checkpoint
         for index in sorted(self.index_info.keys()):
             if index in self.checkpoint:
@@ -243,7 +242,7 @@ class ESTransfer(object):
             print ">>> %d of %d indices processed according to %s" % (
                 len(self.checkpoint), len(self.index_info.keys()), self.args.checkpoint_file)
 
-            if index == 'cms-2017-06-01': break
+            # if index == 'cms-2017-06-14': break
 
             if self.selected_indices and not index in self.selected_indices:
                 continue
