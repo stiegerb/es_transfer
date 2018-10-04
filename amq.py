@@ -33,7 +33,10 @@ def post_ads(ads):
     #     list_data.append(interface.make_notification(payload=ad,
     #                                                  id_=id_,
     #                                                  type_='htcondor_job_info'))
-    list_data = (interface.make_notification(payload=ad, id_=id_, type_='htcondor_job_info') for id_, ad in ads)
+    list_data = (interface.make_notification(payload=ad,
+                                             id_=id_,
+                                             type_='htcondor_job_info',
+                                             timestamp=ad['RecordTime']) for id_, ad in ads)
 
     sent_data = interface.send(list_data)
     # return (len(sent_data), len(ads))

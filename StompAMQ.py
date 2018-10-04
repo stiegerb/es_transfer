@@ -142,7 +142,8 @@ class StompAMQ(object):
 
 
     def make_notification(self, payload, id_, producer=None,
-                          type_='cms_wmagent_info'):
+                          type_='cms_wmagent_info',
+                          timestamp=None):
         """
         Generate a notification with the specified data
 
@@ -168,13 +169,15 @@ class StompAMQ(object):
         notification.update(headers)
 
         # Add body consisting of the payload and metadata
+        timestamp = timestamp or time.time()
         body = {
             # 'payload': payload,
             'metadata': {
-                'timestamp': int(time.time()),
-                'id': id_,
+                'timestamp': int(timestamp),
+                '_id': id_,
                 'uuid': str(uuid.uuid1()),
-            }
+            },
+            '_id': id_
         }
         body.update(payload)
 
