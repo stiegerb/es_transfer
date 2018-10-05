@@ -28,11 +28,7 @@ def get_es_handle(hostname="es-cms.cern.ch", port=9203):
                                      ca_certs='/etc/pki/tls/certs/ca-bundle.trust.crt')
 
 
-def dump_by_recordtime(date_string, target='/data/raw_time_data/'):
-    date = tuple([int(d) for d in date_string.split('-')])
-    timestamp = date_to_timestamp(*date)
-    print "Querying for %s, %d-%d" % (date_string, timestamp, timestamp+24*60*60)
-
+def query_by_timestamp(timestamp):
     get_es_handle(args.hostname, args.port)
     query = {"query": {
                 "range": {
@@ -47,30 +43,53 @@ def dump_by_recordtime(date_string, target='/data/raw_time_data/'):
     res = _es_handle.search(index='cms-20*',
                             body=json.dumps(query))
 
-    print 'Found %d documents total' % res['hits']['total']
+    total = res['hits']['total']
+    print 'Found %d documents total' % total
 
     es_scan = es_helpers.scan(
             _es_handle,
             query=query,
             index='cms-20*',
             doc_type='job',
-            size=1000
+            size=10000
         )
 
+    return es_scan, total
+
+
+def print_progress(current, total):
+    sys.stdout.write(">>> Wrote {}/{} [{:.1%}]\r".format(
+                    current, total,
+                    current/float(total)))
+    sys.stdout.flush()
+
+
+
+def dump_to_file(data, n_docs, filename):
     count = 0
-    dumpfile = 'es-cms-dump-%s.json' % date_string
-    with open(dumpfile, 'w') as dfile:
-        for doc in es_scan:
+    print_progress(count, n_docs)
+    with open(filename, 'w') as dfile:
+        for doc in data:
             json.dump(doc, dfile)
             dfile.write('\n')
             count += 1
-            # print doc['_source']['RecordTime'], doc['_source']['GlobalJobId']
+            if count % 100 == 0:
+                print_progress(count, n_docs)
 
-    print 'Dumped %d docs into %s' % (count, dumpfile)
+    print ">>> Wrote %d/%d [100.0%%]" % (count, n_docs)
+    print 'Dumped %d docs into %s' % (count, filename)
+
 
 def main(args):
     for date_string in args.recordtime:
-        dump_by_recordtime(date_string, target=args.target)
+        date = tuple([int(d) for d in date_string.split('-')])
+        timestamp = date_to_timestamp(*date)
+        print "Querying for %s, %d-%d" % (date_string, timestamp, timestamp+24*60*60)
+
+        data, n_docs = query_by_timestamp(timestamp)
+
+        dumpfile = os.path.join(args.target, 'es-cms-dump-%s.json' % date_string)
+        dump_to_file(data, n_docs, dumpfile)
 
 
 if __name__ == '__main__':
