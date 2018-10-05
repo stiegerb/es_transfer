@@ -4,9 +4,10 @@ import sys
 import time
 import shlex
 import subprocess
-import es_transfer
 
 from argparse import ArgumentParser
+
+from transfer_helpers import read_es_config
 
 
 def dump_index(index, hostname="es-cms.cern.ch", port=9203,
@@ -16,10 +17,10 @@ def dump_index(index, hostname="es-cms.cern.ch", port=9203,
         os.makedirs(target)
     
     destination = os.path.join(target, "%s.json"%index)
-    username, password = es_transfer.read_es_config("es.conf")
+    es_conf = read_es_config("es.conf")
     starttime = time.time()
     print ">>> Running elasticdump"
-    cmd = "elasticdump --input=https://%s:%s@%s:%d/%s" % (username, password, hostname, port, index)
+    cmd = "elasticdump --input=https://{user}:{pass}@{host}:{port}/{index}".format(index=index, **es_conf)
     cmd += " --output=%s/%s.json --type data --limit 2500" % (target, index)
     if not dry_run:
         result = subprocess.Popen(shlex.split(cmd),

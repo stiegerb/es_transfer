@@ -1,72 +1,28 @@
 #!/usr/bin/env python
-
 import os
 import sys
 import csv
 import json
 import time
 import shlex
-import logging
 import subprocess
 
-from logging.handlers import RotatingFileHandler
 from argparse import ArgumentParser
 
+import dump_es_index
+
 from amq import post_ads
-
-import es_dump
-
-date_vals = set([ \
-    "CompletionDate",
-    "EnteredCurrentStatus",
-    "JobCurrentStartDate",
-    "JobCurrentStartExecutingDate",
-    "JobCurrentStartTransferOutputDate",
-    "JobLastStartDate",
-    "JobStartDate",
-    "LastMatchTime",
-    "LastSuspensionTime",
-    "LastVacateTime_RAW",
-    "QDate",
-    "ShadowBday",
-    "StageInFinish",
-    "StageInStart",
-    "JobFinishedHookDone",
-    "LastJobLeaseRenewal",
-    "LastRemoteStatusUpdate",
-    "GLIDEIN_ToDie",
-    "GLIDEIN_ToRetire",
-    "DataCollectionDate",
-    "RecordTime",
-    "ChirpCMSSWLastUpdate",
-])
+from transfer_helpers import convert_dates_to_millisecs
+from transfer_helpers import read_es_config
+from transfer_helpers import free_diskspace
+from transfer_helpers import set_up_logging
 
 
-def convert_dates_to_millisecs(record):
-    for date_field in date_vals:
-        try:
-            record[date_field] *= 1000
-        except (KeyError, TypeError): continue
-
-    return record
-
-def read_es_config(filename="es.conf"):
-    username, password = None, None
-    with open(filename, "r") as conf:
-        for line in conf:
-            key, val = line.split(":")
-            if key.strip().lower() == 'user':
-                username = str(val.strip())
-            if key.strip().lower() == 'pass':
-                password = str(val.strip())
-
-    return username, password
-
-def get_index_names_quick(pattern='cms-20', hostname="es-cms.cern.ch", port=9203):
+def get_index_names_quick(pattern='cms-20'):
     """Download and return a list of all index names"""
-    username, password = read_es_config("es.conf")
+    es_conf = read_es_config("es.conf")
 
-    cmd = "curl https://%s:%s@%s:%d/_indices?v" % (username, password, hostname, port)
+    cmd = "curl https://{user}:{pass}@{host}:{port}/_indices?v".format(**es_conf)
     result = subprocess.Popen(shlex.split(cmd),
                               stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE).communicate()[0]
@@ -76,11 +32,12 @@ def get_index_names_quick(pattern='cms-20', hostname="es-cms.cern.ch", port=9203
 
     return sorted(indices)
 
-def get_index_data(pattern='cms-20', hostname="es-cms.cern.ch", port=9203, outputfile='indices.json'):
-    """Download a list of all indices with more information"""
-    username, password = read_es_config("es.conf")
 
-    cmd = "curl https://%s:%s@%s:%d/_cat/indices?v" % (username, password, hostname, port)
+def get_index_data(pattern='cms-20', outputfile='indices.json'):
+    """Download a list of all indices with more information"""
+    es_conf = read_es_config("es.conf")
+
+    cmd = "curl https://{user}:{pass}@{host}:{port}/_cat/_indices?v".format(**es_conf)
     result = subprocess.Popen(shlex.split(cmd),
                               stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE).communicate()[0]
@@ -101,6 +58,7 @@ def get_index_data(pattern='cms-20', hostname="es-cms.cern.ch", port=9203, outpu
 
     print "Wrote index information to '%s'" % outputfile 
 
+
 def remove_local_dump(index, target='/data/raw_index_data/'):
     location = os.path.join(target, '%s.json'%index)
     try:
@@ -109,18 +67,16 @@ def remove_local_dump(index, target='/data/raw_index_data/'):
     except OSError:
         pass
 
+
 def dump_or_load(index, source):
     location = os.path.join(source, '%s.json'%index)
     if not os.path.isfile(location):
-        es_dump.dump_index(index, target=source)
+        dump_es_index.dump_index(index, target=source)
 
     return location
 
-def free_diskspace(path):
-    res = os.statvfs(path)
-    return res.f_bavail * res.f_frsize
 
-class ESTransfer(object):
+class ESTransferByIndex(object):
     def __init__(self, args):
         self.args = args
         self.index_info_file = 'indices.json'
@@ -138,9 +94,11 @@ class ESTransfer(object):
             self.selected_indices = [i.strip() for i in self.args.process_these.split(',')]
             assert(all([i in self.index_info.keys() for i in self.selected_indices]))
 
+
     def load_index_info(self):
         with open(self.index_info_file, 'r') as idxfile:
             self.index_info = json.load(idxfile)
+
 
     def load_checkpoint(self):
         try:
@@ -152,6 +110,7 @@ class ESTransfer(object):
         # Make sure there are no duplicates
         assert(len(self.checkpoint) == len(set(self.checkpoint)))
 
+
     def mark_as_done(self, index):
         self.checkpoint.append(index)
         if self.args.dry_run:
@@ -161,6 +120,7 @@ class ESTransfer(object):
 
         if self.args.clean_after_upload:
             remove_local_dump(index, self.dump_location)
+
 
     def dump(self, check=False):
         """
@@ -202,6 +162,7 @@ class ESTransfer(object):
                          (time.time()-mystart)/60.,
                          (time.time()-starttime)/60.))
 
+
     def clear_buffer(self):
         bunch = ((d['GlobalJobId'], convert_dates_to_millisecs(d)) for d in self.buffer)
         if self.args.dry_run:
@@ -211,6 +172,7 @@ class ESTransfer(object):
         n_sent = post_ads(bunch)
         assert(n_sent == len(self.buffer))
         self.buffer = []
+
 
     def run(self):
         starttime = time.time()
@@ -274,7 +236,6 @@ class ESTransfer(object):
                 break
 
 
-
 def main(args):
 
     if args.get_index_data != '':
@@ -284,7 +245,7 @@ def main(args):
         get_index_data(outputfile=outputfile)
         return
 
-    est = ESTransfer(args=args)
+    est = ESTransferByIndex(args=args)
 
     if args.dump:
         est.dump()
@@ -292,27 +253,12 @@ def main(args):
         est.run()
 
 
-def set_up_logging(log_dir='log/'):
-    """Configure root logger with rotating file handler"""
-    logger = logging.getLogger()
-    logger.setLevel(logging.WARNING)
-
-    if not os.path.isdir(log_dir):
-        os.system('mkdir -p %s' % log_dir)
-
-    log_file = os.path.join(log_dir, 'spider_cms.log')
-    filehandler = RotatingFileHandler(log_file, maxBytes=100000)
-    filehandler.setFormatter(
-        logging.Formatter('%(asctime)s : %(name)s:%(levelname)s - %(message)s'))
-
-    logger.addHandler(filehandler)
-
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--get_index_data", default='',
                         type=str, dest="get_index_data",
                         help="Dump a list of indices to this file [default: %(default)s]")
-    parser.add_argument("--checkpoint_file", default='checkpoint.dat',
+    parser.add_argument("--checkpoint_file", default='index_checkpoint.dat',
                         type=str, dest="checkpoint_file",
                         help="Process the indices from this file [default: %(default)s]")
     parser.add_argument("--dump", action='store_true',
