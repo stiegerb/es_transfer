@@ -39,25 +39,31 @@ def get_es_handle():
                                      ca_certs='/etc/pki/tls/certs/ca-bundle.trust.crt')
 
 
-def scan_timestamp_range(ts_from, ts_to=None, index='cms-20*', buffer_size=5000):
+def make_query(ts_from, ts_to=None):
     ts_to = ts_to or ts_from + 24*60*60
-
-    get_es_handle()
     query = {"query": {
-                "range": {
-                    "RecordTime": {
-                            "gte" : ts_from,
-                            "lt"  : ts_to
-                        }
+            "range": {
+                "RecordTime": {
+                        "gte" : ts_from,
+                        "lt"  : ts_to
                     }
                 }
             }
+        }
 
+    return query
+
+
+def get_total_hits(query, index='cms-20*'):
+    get_es_handle()
     res = _es_handle.search(index=index,
                             body=json.dumps(query))
 
-    total = res['hits']['total']
-    # print 'Found %d documents total' % total
+    return res['hits']['total']
+
+
+def get_es_scan(query, index='cms-20*', buffer_size=5000):
+    get_es_handle()
 
     es_scan = es_helpers.scan(
             _es_handle,
@@ -67,11 +73,11 @@ def scan_timestamp_range(ts_from, ts_to=None, index='cms-20*', buffer_size=5000)
             size=buffer_size
         )
 
-    return es_scan, total
+    return es_scan
 
 
 def print_progress(current, total):
-    sys.stdout.write(">>> Wrote {}/{} [{:.1%}]\r".format(
+    sys.stdout.write(">>> Processed {}/{} [{:.1%}]\r".format(
                     current, total,
                     current/float(total)))
     sys.stdout.flush()
