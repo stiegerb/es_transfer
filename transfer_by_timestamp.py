@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-import os
-import sys
-import csv
 import time
 import multiprocessing
 
@@ -10,10 +7,10 @@ from argparse import ArgumentParser
 from dump_es_bytimestamp import make_query
 from dump_es_bytimestamp import get_es_scan
 from dump_es_bytimestamp import get_total_hits
-from dump_es_bytimestamp import print_progress
 from dump_es_bytimestamp import date_string_to_timestamp
 
 from amq import post_ads
+from transfer_helpers import print_progress
 from transfer_helpers import convert_dates_to_millisecs
 from transfer_helpers import read_es_config
 
@@ -43,7 +40,7 @@ def es_query_worker(query, query_queue, buffer_size):
     assert(count == n_total), "Inconsistent count (query worker)"
 
 
-def amq_upload_worker(query_queue, batch_size=5000):
+def amq_upload_worker(query_queue, batch_size=5000, dry_run=False):
     batch = []
     count_in = 0
     count_out = 0
@@ -55,7 +52,7 @@ def amq_upload_worker(query_queue, batch_size=5000):
         batch.append(doc)
         count_in += 1
         if len(batch) == batch_size:
-            count_out += upload_batch(batch)
+            count_out += upload_batch(batch, dry_run=dry_run)
             batch = []
 
         if count_in % 250 == 0:
@@ -63,17 +60,19 @@ def amq_upload_worker(query_queue, batch_size=5000):
 
 
     if batch:
-        count_out += upload_batch(batch)
+        count_out += upload_batch(batch, dry_run=dry_run)
         batch = []
     print ">>> Processed {}/{} [{:.1%}]".format(count_in, n_total, count_in/float(n_total))
 
     assert(count_in == count_out == n_total), "Inconsistent count (upload worker)"
 
 
-def upload_batch(batch):
+def upload_batch(batch, dry_run=False):
     data = ((d['GlobalJobId'], convert_dates_to_millisecs(d)) for d in batch)
-    # n_sent = post_ads(data)
-    n_sent = len(batch) ## DEBUG
+    if not dry_run:
+        n_sent = post_ads(data)
+    else:
+        n_sent = len(batch)
     assert(n_sent == len(batch)), "Inconsistent count (batch uploader)"
     return n_sent
 
@@ -98,7 +97,9 @@ def process_date_string(date_string, args):
     query_proc.start()
 
     upload_proc = multiprocessing.Process(target=amq_upload_worker,
-                                          args=(query_queue, args.amq_buffer_size))
+                                          args=(query_queue,
+                                                args.amq_buffer_size,
+                                                args.dry_run))
     upload_proc.start()
 
     query_proc.join()
@@ -151,7 +152,7 @@ if __name__ == '__main__':
     parser.add_argument("--es_buffer_size", default=5000,
                         type=int, dest="es_buffer_size",
                         help="Buffer size for elasticsearch scan [default: %(default)s]")
-    parser.add_argument("--amq_buffer_size", default=1000,
+    parser.add_argument("--amq_buffer_size", default=5000,
                         type=int, dest="amq_buffer_size",
                         help="Buffer size for AMQ upload [default: %(default)s]")
 

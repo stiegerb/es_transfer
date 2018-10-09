@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import sys
 import logging
 
 from logging.handlers import RotatingFileHandler
@@ -75,4 +76,12 @@ def set_up_logging(log_dir='log/'):
         logging.Formatter('%(asctime)s : %(name)s:%(levelname)s - %(message)s'))
 
     logger.addHandler(filehandler)
+
+
+def print_progress(current, total):
+    sys.stdout.write(">>> Processed {}/{} [{:.1%}]\r".format(
+                    current, total,
+                    current/float(total)))
+    sys.stdout.flush()
+
 

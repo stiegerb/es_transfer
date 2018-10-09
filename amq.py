@@ -39,5 +39,4 @@ def post_ads(ads):
                                              timestamp=ad['RecordTime']) for id_, ad in ads)
 
     sent_data = interface.send(list_data)
-    # return (len(sent_data), len(ads))
     return len(sent_data)

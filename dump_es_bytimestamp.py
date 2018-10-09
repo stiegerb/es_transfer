@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import os
-import sys
 import json
 from elasticsearch import helpers as es_helpers
 from elasticsearch import Elasticsearch
@@ -8,6 +7,7 @@ from elasticsearch import Elasticsearch
 from datetime import datetime
 from argparse import ArgumentParser
 
+from transfer_helpers import print_progress
 from transfer_helpers import read_es_config
 
 def date_to_timestamp(year, month, day):
@@ -74,14 +74,6 @@ def get_es_scan(query, index='cms-20*', buffer_size=5000):
         )
 
     return es_scan
-
-
-def print_progress(current, total):
-    sys.stdout.write(">>> Processed {}/{} [{:.1%}]\r".format(
-                    current, total,
-                    current/float(total)))
-    sys.stdout.flush()
-
 
 
 def dump_to_file(data, n_docs, filename):
