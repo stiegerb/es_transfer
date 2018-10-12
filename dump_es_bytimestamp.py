@@ -70,6 +70,7 @@ def get_es_scan(query, index='cms-20*', buffer_size=5000):
             query=query,
             index='cms-20*',
             doc_type='job',
+            request_timeout=20,
             size=buffer_size
         )
 
@@ -96,7 +97,9 @@ def main(args):
         timestamp = date_string_to_timestamp(date_string)
         print "Querying for %s, %d-%d" % (date_string, timestamp, timestamp+24*60*60)
 
-        data, n_docs = scan_timestamp_range(timestamp, timestamp+24*60*60)
+        query = make_query(timestamp, timestamp+24*60*60)
+        n_docs = get_total_hits(query)
+        data = get_es_scan(query)
 
         dumpfile = os.path.join(args.target, 'es-cms-dump-%s.json' % date_string)
         dump_to_file(data, n_docs, dumpfile)
