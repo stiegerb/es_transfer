@@ -69,10 +69,7 @@ def amq_upload_worker(query_queue, batch_size=5000, dry_run=False):
 
 def upload_batch(batch, dry_run=False):
     data = ((d['GlobalJobId'], convert_dates_to_millisecs(d)) for d in batch)
-    if not dry_run:
-        n_sent = post_ads(data)
-    else:
-        n_sent = len(batch)
+    n_sent = post_ads(data, dry_run)
     assert(n_sent == len(batch)), "Inconsistent count (batch uploader)"
     return n_sent
 

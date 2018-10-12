@@ -22,7 +22,7 @@ def get_amq_interface():
     return _amq_interface
 
 
-def post_ads(ads):
+def post_ads(ads, dry_run=False):
     # if not len(ads):
     #     logging.warning("No new documents found")
     #     return
@@ -38,5 +38,9 @@ def post_ads(ads):
                                              type_='htcondor_job_info',
                                              timestamp=ad['RecordTime']) for id_, ad in ads)
 
-    sent_data = interface.send(list_data)
+    if not dry_run:
+        sent_data = interface.send(list_data)
+    else:
+        sent_data = [a for a in list_data]
+
     return len(sent_data)
