@@ -1,5 +1,7 @@
 #!/usr/bin/env python
+import os
 import time
+import json
 import multiprocessing
 
 from argparse import ArgumentParser
@@ -35,6 +37,27 @@ def es_query_worker(query, query_queue, buffer_size):
 
         query_queue.put(doc)
         count += 1
+
+    query_queue.put(None) # send poison pill
+    assert(count == n_total), "Inconsistent count (query worker)"
+
+
+def file_read_worker(filename, query_queue, n_total):
+    query_queue.put(n_total) # first put the total expected
+
+    count = 0
+    with open(filename, "r") as dumpfile:
+        for line in dumpfile:
+            raw_doc = json.loads(line)
+            try:
+                doc = raw_doc['_source']
+            except ValueError, e:
+                print "&&& ERROR: Failed to parse doc from line in raw data!"
+                print str(doc[:200])
+                raise e
+
+            query_queue.put(doc)
+            count += 1
 
     query_queue.put(None) # send poison pill
     assert(count == n_total), "Inconsistent count (query worker)"
@@ -89,18 +112,36 @@ def process_date_string(date_string, args):
 
     query = make_query(timestamp, timestamp + 24*60*60)
 
-    query_proc = multiprocessing.Process(target=es_query_worker,
-                                         args=(query, query_queue, args.es_buffer_size))
-    query_proc.start()
+
+    processes = []
+    if args.streaming:
+        print "    Streaming from ES"
+        query_proc = multiprocessing.Process(target=es_query_worker,
+                                             args=(query, query_queue, args.es_buffer_size))
+        query_proc.start()
+        processes.append(query_proc)
+
+    else:
+        n_total = get_total_hits(query)
+        dumpfile = os.path.join(args.dump_location, 'es-cms-dump-%s.json' % date_string)
+        if not os.path.isfile(dumpfile):
+            print 'Dumpfile not found: %s, skipping' % dumpfile
+            return
+        print "    Reading from %s" % dumpfile
+        read_proc =  multiprocessing.Process(target=file_read_worker,
+                                             args=(dumpfile, query_queue, n_total))
+        read_proc.start()
+        processes.append(read_proc)
 
     upload_proc = multiprocessing.Process(target=amq_upload_worker,
                                           args=(query_queue,
                                                 args.amq_buffer_size,
                                                 args.dry_run))
     upload_proc.start()
+    processes.append(upload_proc)
 
-    query_proc.join()
-    upload_proc.join()
+    for p in processes:
+        p.join()
 
     print ">>> %s done in %.2f mins" % (date_string, (time.time()-starttime)/60.)
 
@@ -143,6 +184,12 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('date_strings', metavar='date_strings', type=str, nargs='+',
                         help='Transfer these days')
+    parser.add_argument("--streaming", action='store_true',
+                        dest="streaming",
+                        help="Read directly from ES rather than from a dump file")
+    parser.add_argument("--dump_location", default='/data/raw_index_data/',
+                        type=str, dest="dump_location",
+                        help="Directory to look for file dumps [default: %(default)s]")
     parser.add_argument("--checkpoint_file", default='checkpoint.dat',
                         type=str, dest="checkpoint_file",
                         help="Processed the date_strings from this file [default: %(default)s]")
