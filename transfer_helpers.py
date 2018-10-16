@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 import os
 import sys
+import shlex
 import logging
+import subprocess
 
 from logging.handlers import RotatingFileHandler
 
@@ -84,4 +86,14 @@ def print_progress(current, total):
                     current/float(total)))
     sys.stdout.flush()
 
+
+def get_total_lines(filename):
+    cmd = "wc -l %s" % filename
+    result = subprocess.check_output(shlex.split(cmd))
+
+    try:
+        count = int(result.split()[0])
+    except ValueError:
+        count = None
+    return count
 

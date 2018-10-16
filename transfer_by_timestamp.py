@@ -15,6 +15,7 @@ from amq import post_ads
 from transfer_helpers import print_progress
 from transfer_helpers import convert_dates_to_millisecs
 from transfer_helpers import read_es_config
+from transfer_helpers import get_total_lines
 
 
 def es_query_worker(query, query_queue, buffer_size):
@@ -101,7 +102,7 @@ def process_date_string(date_string, args):
     starttime = time.time()
 
     mp_manager = multiprocessing.Manager()
-    query_queue = mp_manager.Queue()
+    query_queue = mp_manager.Queue(maxsize=10000)
 
 
     print ">>> Processing %s" % date_string
@@ -117,26 +118,29 @@ def process_date_string(date_string, args):
     if args.streaming:
         print "    Streaming from ES"
         query_proc = multiprocessing.Process(target=es_query_worker,
-                                             args=(query, query_queue, args.es_buffer_size))
+                                             args=(query, query_queue, args.es_buffer_size),
+                                             name="es_query_worker")
         query_proc.start()
         processes.append(query_proc)
 
     else:
-        n_total = get_total_hits(query)
         dumpfile = os.path.join(args.dump_location, 'es-cms-dump-%s.json' % date_string)
         if not os.path.isfile(dumpfile):
             print 'Dumpfile not found: %s, skipping' % dumpfile
             return
         print "    Reading from %s" % dumpfile
+        n_total = get_total_lines(dumpfile)
         read_proc =  multiprocessing.Process(target=file_read_worker,
-                                             args=(dumpfile, query_queue, n_total))
+                                             args=(dumpfile, query_queue, n_total),
+                                             name="file_read_worker")
         read_proc.start()
         processes.append(read_proc)
 
     upload_proc = multiprocessing.Process(target=amq_upload_worker,
                                           args=(query_queue,
                                                 args.amq_buffer_size,
-                                                args.dry_run))
+                                                args.dry_run),
+                                          name='amq_upload_worker')
     upload_proc.start()
     processes.append(upload_proc)
 
