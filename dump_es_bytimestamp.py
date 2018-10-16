@@ -56,10 +56,11 @@ def make_query(ts_from, ts_to=None):
 
 def get_total_hits(query, index='cms-20*'):
     get_es_handle()
-    res = _es_handle.search(index=index,
-                            body=json.dumps(query))
+    res = _es_handle.count(index=index,
+                           doc_type='job',
+                           body=json.dumps(query))
 
-    return res['hits']['total']
+    return res['count']
 
 
 def get_es_scan(query, index='cms-20*', buffer_size=5000):
