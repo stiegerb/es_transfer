@@ -36,7 +36,9 @@ def get_es_handle():
                                      "http_auth": "{user}:{pass}".format(**es_conf)}],
                                      verify_certs=True,
                                      use_ssl=True,
-                                     ca_certs='/etc/pki/tls/certs/ca-bundle.trust.crt')
+                                     ca_certs='ca-bundle.trust.crt')
+
+    return _es_handle
 
 
 def make_query(ts_from, ts_to=None):
@@ -62,6 +64,21 @@ def get_total_hits(query, index='cms-20*'):
 
     return res['count']
 
+def get_total_hits_sliced(query, slice_id, max_slices, index='cms-20*'):
+    get_es_handle()
+    body = {
+        "slice": {
+            "id": slice_id,
+            "max" : max_slices
+        }
+    }
+    body.update(query)
+
+    res = _es_handle.search(index=index, doc_type='job', scroll='5m',
+                            size=0, body=body)
+
+    return res['hits']['total']
+
 
 def get_es_scan(query, index='cms-20*', buffer_size=5000):
     get_es_handle()
@@ -74,6 +91,69 @@ def get_es_scan(query, index='cms-20*', buffer_size=5000):
             request_timeout=20,
             size=buffer_size
         )
+
+    return es_scan
+
+
+def get_es_scan_sliced(query, slice_id, max_slices=2,
+                       index='cms-20*', buffer_size=5000):
+    from elasticsearch.helpers import ScanError
+
+    raise_on_error=True
+    clear_scroll=True
+
+    get_es_handle()
+
+    body = {
+        "slice": {
+            "id": slice_id,
+            "max" : max_slices
+        }
+    }
+    body.update(query)
+
+    def es_scan():
+        resp = _es_handle.search(body=body, scroll='5m', size=buffer_size,
+                                 request_timeout=20, doc_type='job', index=index)
+
+        scroll_id = resp.get('_scroll_id')
+        if scroll_id is None:
+            return
+
+
+        try:
+            first_run = True
+            while True:
+                # if we didn't set search_type to scan initial search contains data
+                if first_run:
+                    first_run = False
+                else:
+                    resp = _es_handle.scroll(scroll_id, scroll='5m',
+                                             request_timeout=20)
+
+                for hit in resp['hits']['hits']:
+                    yield hit
+
+                # check if we have any errrors
+                if resp["_shards"]["successful"] < resp["_shards"]["total"]:
+                    logger.warning(
+                        'Scroll request has only succeeded on %d shards out of %d.',
+                        resp['_shards']['successful'], resp['_shards']['total']
+                    )
+                    if raise_on_error:
+                        raise ScanError(
+                            scroll_id,
+                            'Scroll request has only succeeded on %d shards out of %d.' %
+                                (resp['_shards']['successful'], resp['_shards']['total'])
+                        )
+
+                scroll_id = resp.get('_scroll_id')
+                # end of scroll
+                if scroll_id is None or not resp['hits']['hits']:
+                    break
+        finally:
+            if scroll_id and clear_scroll:
+                _es_handle.clear_scroll(body={'scroll_id': [scroll_id]}, ignore=(404, ))
 
     return es_scan
 
