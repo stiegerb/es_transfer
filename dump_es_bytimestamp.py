@@ -36,7 +36,7 @@ def get_es_handle():
                                      "http_auth": "{user}:{pass}".format(**es_conf)}],
                                      verify_certs=True,
                                      use_ssl=True,
-                                     ca_certs='ca-bundle.trust.crt')
+                                     ca_certs='/etc/pki/tls/certs/ca-bundle.trust.crt')
 
     return _es_handle
 
@@ -60,6 +60,7 @@ def get_total_hits(query, index='cms-20*'):
     get_es_handle()
     res = _es_handle.count(index=index,
                            doc_type='job',
+                           request_timeout=30,
                            body=json.dumps(query))
 
     return res['count']
