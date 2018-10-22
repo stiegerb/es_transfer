@@ -62,7 +62,6 @@ def es_query_worker_sliced(query, slice_id, max_slices, query_queue, buffer_size
         count += 1
 
     query_queue.put(None) # send poison pill
-    assert(count == n_total_in_slice), "Inconsistent count (sliced query worker)"
 
 
 def file_read_worker(filename, query_queue, n_total):
@@ -108,7 +107,6 @@ def amq_upload_worker(query_queue, batch_size=5000, dry_run=False, max_slices=1)
             count_out += upload_batch(batch, dry_run=dry_run)
             batch = []
 
-        if count_in % 250 == 0:
             print_progress(count_in, n_total)
 
 
