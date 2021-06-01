@@ -1,4 +1,4 @@
 docopt==0.6.2
 elasticsearch==6.3.1
 stomp.py==4.1.21
-urllib3==1.23
+urllib3==1.26.5
